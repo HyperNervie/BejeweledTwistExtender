@@ -8,6 +8,7 @@
 
 //used to store the twist direction for frame perfect clicks since they call twistGems later
 int btnClicked;
+bool ccwValid;
 
 namespace CCWTwistMod
 {
@@ -117,6 +118,68 @@ namespace CCWTwistMod
             ret;
         }
     }
+    NAKEDDEF(PrecheckMatchOverride)
+    {
+        __asm
+        {
+            //Change sub_6BB619 and call to check CCW matches
+            mov byte ptr ds:0x6BB724, 0xC0; //or dword ptr [ebp-40],-01
+            mov byte ptr ds:0x6BB728, 0xD4; //or dword ptr [ebp-2C],-01
+            mov byte ptr ds:0x6BB732, 0xBC; //mov [ebp-44],eax
+            mov byte ptr ds:0x6BB735, 0xB8; //mov [ebp-48],edi
+            mov byte ptr ds:0x6BB738, 0xC4; //mov [ebp-3C],edi
+            mov byte ptr ds:0x6BB73B, 0xC8; //mov [ebp-38],eax
+            mov byte ptr ds:0x6BB73E, 0xCC; //mov [ebp-34],edi
+            mov byte ptr ds:0x6BB741, 0xD0; //mov [ebp-30],edi
+            push [ebp + 8];
+            mov ecx, esi;
+            push 1;
+            mov eax, 0x6BB619;
+            call eax;
+            mov ccwValid, al;
+
+            //Recover sub_6BB619
+            mov byte ptr ds:0x6BB724, 0xCC; //or dword ptr [ebp-34],-01
+            mov byte ptr ds:0x6BB728, 0xD0; //or dword ptr [ebp-30],-01
+            mov byte ptr ds:0x6BB732, 0xB8; //mov [ebp-48],eax
+            mov byte ptr ds:0x6BB735, 0xBC; //mov [ebp-44],edi
+            mov byte ptr ds:0x6BB738, 0xC0; //mov [ebp-40],edi
+            mov byte ptr ds:0x6BB73B, 0xC4; //mov [ebp-3C],eax
+            mov byte ptr ds:0x6BB73E, 0xC8; //mov [ebp-38],edi
+            mov byte ptr ds:0x6BB741, 0xD4; //mov [ebp-2C],edi
+
+            push [ebp + 8];
+            mov ecx, esi;
+            push 1;
+            push 0x6BD8A4;
+            ret;
+        }
+    }
+    NAKEDDEF(DoomCountdownOverride)
+    {
+        __asm
+        {
+            cmp byte ptr[esi + 2015h], 0;
+            je clockwise;
+
+            cmp ccwValid, 0;
+            je invalidtwist;
+            jmp validtwist;
+
+        clockwise:
+            cmp byte ptr[esi + 1C40h], 0;
+            je invalidtwist;
+            jmp validtwist;
+
+        validtwist:
+            push 0x6AA160;
+            ret;
+
+        invalidtwist:
+            push 0x6AA16D;
+            ret;
+        }
+    }
 }
 
 void initCCWTwistMod(CodeInjection::FuncInterceptor* hook)
@@ -125,9 +188,14 @@ void initCCWTwistMod(CodeInjection::FuncInterceptor* hook)
     {
         inject_byte(0x7D7BA6, 0x57); //increase FoV to differentiate screenshots
         inject_jmp(0x6C73E9, reinterpret_cast<void*>(CCWTwistMod::boardClickFramePerfectOverride));
+        inject_nops(0x6C73EE, 1);
         inject_jmp(0x6D685E, reinterpret_cast<void*>(CCWTwistMod::updateBoardOverride));
         inject_jmp(0x6C7473, reinterpret_cast<void*>(CCWTwistMod::boardClickOverride));
+        inject_nops(0x6C7478, 2);
         inject_jmp(0x6CA5F4, reinterpret_cast<void*>(CCWTwistMod::keyPressedOverride));
+        inject_jmp(0x6BD89D, reinterpret_cast<void*>(CCWTwistMod::PrecheckMatchOverride));
+        inject_jmp(0x6AA158, reinterpret_cast<void*>(CCWTwistMod::DoomCountdownOverride));
+        inject_nops(0x6AA15D, 1);
         if (altSound)
             inject_jmp(0x6C7128, reinterpret_cast<void*>(CCWTwistMod::TwistGemsOverride));
         printf("Counter-Clockwise Twist Mod Initialized! %sSound set: %d\n", isMouseInverted ? "Mouse controls inverted. " : "", altSound);
